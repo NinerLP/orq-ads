@@ -58,26 +58,35 @@ object RangeTree {
         val leftSorted = left.sorted(new PointOrdering(dim+1))
         val rightSorted = right.sorted(new PointOrdering(dim+1))
         var cascadeList : List[CascadeEntry] = List()
-
+        var prev : Point = null
+        var fst = true
 
         // Build a cascade list for this entry
         while (lCount < leftSorted.length && rCount < rightSorted.length) {
           val leftP = leftSorted(lCount)
           val rightP = rightSorted(rCount)
           if (leftP.coordinates(dim+1) <= rightP.coordinates(dim+1)) {
-            if (lCount > 0) {
-              val leftPrev = leftSorted(lCount-1)
-              if (leftPrev.coordinates(dim+1) != leftP.coordinates(dim+1)) lIndex = lCount
+            if (lCount + rCount > 0) {
+              //val leftPrev = leftSorted(lCount-1)
+              if (prev.coordinates(dim+1) != leftP.coordinates(dim+1)) {
+                lIndex = lCount
+                rIndex = rCount
+              }
             }
             cascadeList = cascadeList ++ List(new CascadeEntry(leftP,lIndex,rIndex))
             lCount += 1
+            prev = leftP
           } else {
-            if (rCount > 0) {
-              val rightPrev = rightSorted(rCount-1)
-              if (rightPrev.coordinates(dim+1) != rightP.coordinates(dim+1)) rIndex = rCount
+            if (rCount + lCount > 0) {
+              //val rightPrev = rightSorted(rCount-1)
+              if (prev.coordinates(dim+1) != rightP.coordinates(dim+1)) {
+                rIndex = rCount
+                lIndex = lCount
+              }
             }
             cascadeList = cascadeList ++ List(new CascadeEntry(rightP,lIndex,rIndex))
             rCount += 1
+            prev = rightP
           }
         }
 
@@ -135,7 +144,7 @@ object RangeTree {
     }
 
     // find first cascade element >= than our left side by "y"
-    def binSearch(target : Int, cascade : Cascade, dim : Int): Int = {
+    /*def binSearch(target : Int, cascade : Cascade, dim : Int): Int = {
       cascade match {
         case CascadeList(l) => {
           var low = 0
@@ -143,6 +152,27 @@ object RangeTree {
           while (low <= high) {
             var mid = (low+high)/2
             if (l(mid).point.coordinates(dim) > target) high = mid - 1 else if (l(mid).point.coordinates(dim) < target) low = mid + 1 else
+            {
+              while (mid > 0 && l(mid).point.coordinates(dim) >= target) {
+                mid -= 1
+              }
+              return mid
+            }
+          }
+          //println(high)
+          if (high < 0) 0 else high
+        }
+      }
+    }*/
+
+    def binSearch(target : Int, cascade : Cascade, dim : Int) : Int = {
+      cascade match {
+        case CascadeList(l) => {
+          var low = -1
+          var high = l.length
+          while (low < high - 1) {
+            var mid = (low+high)/2
+            if (l(mid).point.coordinates(dim) > target) high = mid else if (l(mid).point.coordinates(dim) < target) low = mid else
             {
               while (mid > 0 && l(mid).point.coordinates(dim) >= target) {
                 mid -= 1
@@ -178,10 +208,12 @@ object RangeTree {
       case Node(points, lNode, rNode, leftMin, rightMax, nextDim, cascadeList) => {
         if (leftMin >= left.coordinates(dim) && rightMax <= right.coordinates(dim)) {
           if (dim+1 >= mDim) Some(points) else searchTree(nextDim, left, right, dim+1, mDim)
-         } else if (leftMin >= left.coordinates(dim)) {
+        } else if (points(0).coordinates(dim) > right.coordinates(dim) || points(points.length-1).coordinates(dim) < left.coordinates(dim)) {
+          None
+        /*else if (leftMin >= left.coordinates(dim)) {
           searchTree(lNode, left, right, dim, mDim)
         } else if (rightMax <= right.coordinates(dim)) {
-          searchTree(rNode, left, right, dim, mDim)
+          searchTree(rNode, left, right, dim, mDim)*/
         } else {
           (searchTree(lNode, left, right, dim, mDim), searchTree(rNode, left, right, dim, mDim)) match {
             case (Some(l), Some(r)) => Some(l++r)
@@ -198,27 +230,38 @@ object RangeTree {
   def searchLast(tree : RangeTree, leftX : Int, leftY : Int, rightX : Int, rightY : Int, dim : Int, cascadeIdx : Int) : Option[List[Point]] = {
     tree match {
       // in leaf just check two coordinates here
-      case (Leaf(p)) => if (p.coordinates(dim+1) >= leftY && p.coordinates(dim+1) <= rightY) Some(List(p)) else None
+      case (Leaf(p)) => if (p.coordinates(dim) >= leftX && p.coordinates(dim) <= rightX && p.coordinates(dim+1) >= leftY && p.coordinates(dim+1) <= rightY) Some(List(p)) else None
       // in Node go as previosly, but save index by Y in cascading lists, to search last dimension just in cascadelist
       case Node(points, lNode, rNode, leftMin, rightMax, _, cascadeList : CascadeList) => {
         if (leftMin >= leftX && rightMax <= rightX) {
+          //search just here, it's enoguh
+          //println(cascadeIdx)
           var result : List[Point] = List()
           var count = cascadeIdx
           while (count < cascadeList.cascadeList.length && cascadeList.cascadeList(count).point.coordinates(dim+1) <= rightY) {
+            //println(cascadeList.cascadeList(count).point.coordinates(dim+1) + " | " + rightY)
             result = result ++ List(cascadeList.cascadeList(count).point)
             count += 1
           }
           if (result.isEmpty) None else Some(result)
-        } else if (leftMin >= leftX) {
+        } else if (points(0).coordinates(dim) > rightX || points(points.length-1).coordinates(dim) < leftX) {
+          None
+         /*else if (leftMin >= leftX) {
           searchLast(lNode, leftX, leftY, rightX, rightY, dim, cascadeList.cascadeList(cascadeIdx).leftIndex)
         } else if (rightMax <= rightX) {
-          searchLast(lNode, leftX, leftY, rightX, rightY, dim, cascadeList.cascadeList(cascadeIdx).rightIndex)
+          searchLast(rNode, leftX, leftY, rightX, rightY, dim, cascadeList.cascadeList(cascadeIdx).rightIndex)*/
         } else {
-          (searchLast(lNode, leftX, leftY, rightX, rightY, dim, cascadeList.cascadeList(cascadeIdx).leftIndex), searchLast(lNode, leftX, leftY, rightX, rightY, dim, cascadeList.cascadeList(cascadeIdx).rightIndex)) match {
-            case (Some(l), Some(r)) => Some(l++r)
-            case (Some(l), _) => Some(l)
-            case (_, Some(r)) => Some(r)
-            case (_,_) => None
+          if (cascadeIdx >= cascadeList.cascadeList.length) {
+            None
+          } else {
+            val left = searchLast(lNode, leftX, leftY, rightX, rightY, dim, cascadeList.cascadeList(cascadeIdx).leftIndex)
+            val right = searchLast(rNode, leftX, leftY, rightX, rightY, dim, cascadeList.cascadeList(cascadeIdx).rightIndex)
+            (left, right) match {
+              case (Some(l), Some(r)) => Some(l ++ r)
+              case (Some(l), None) => Some(l)
+              case (None, Some(r)) => Some(r)
+              case (None, None) => None
+            }
           }
         }
       }
